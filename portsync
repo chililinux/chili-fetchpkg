@@ -1,0 +1,137 @@
+#!/bin/sh
+#shellcheck disable=SC2317,SC2188,SC2034,SC2155,SC2059
+#shellcheck source=/dev/null
+#
+#  scratchpkg
+#
+#  Copyright (c) 2023,2023 by vcatafesta <vcatafesta@gmail.com>
+#  Copyright (c) 2018 by Emmett1  (emmett1.2miligrams@gmail.com)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+APP="${0##*/}"
+repo_file=/etc/scratchpkg.repo
+[ -e "lib.sh" ] && . "lib.sh"
+
+cmp_copy() {
+	# usage:
+	#   cmp_copy <source dir> <target dir>
+	#
+	reponame="${2##*/}"
+	for p in "$1"/*; do
+		[ -d "$p" ] || continue
+		pname="${p##*/}"
+		if [ ! -d "$2/$pname" ]; then
+			mkdir -p "$2/$pname"
+			for f in "$p"/* "$p"/.pkgfiles "$p"/.checksums; do
+				[ -f "$f" ] || continue
+				case "$f" in
+					*/update) continue;;
+				esac
+				fname="${f##*/}"
+				echo "+ $reponame/$pname/$fname"
+				cp "$f" "$2/$pname/$fname"
+			done
+		else
+			for f in "$p"/* "$p"/.pkgfiles "$p"/.checksums; do
+				[ -f "$f" ] || continue
+				case "$f" in
+					*/update) continue;;
+				esac
+				fname="${f##*/}"
+				cmp -s "$f" "$2/$pname/$fname" || {
+					echo "* $reponame/$pname/$fname"
+					cp "$f" "$2/$pname/$fname"
+				}
+			done
+		fi
+	done
+	for p in "$2"/*; do
+		[ -d "$p" ] || continue
+		pname="${p##*/}"
+		for f in "$p"/* "$p"/.pkgfiles "$p"/.checksums; do
+			[ -f "$f" ] || continue
+			fname="${f##*/}"
+			if [ ! -f "$1/$pname/$fname" ]; then
+				echo "- $reponame/$pname/$fname"
+				rm "$2/$pname/$fname"
+			fi
+		done
+		if [ ! -d "$1/$pname" ]; then
+			rmdir "$2/$pname"
+		fi
+	done
+}
+
+sync_repo() {
+	# usage:
+	#   sync_repo <repo url> <ports dir>
+	#
+	url=$(echo "$1" | cut -d / -f -5)
+	portdir=$2
+
+	case $1 in
+		*github.com/*)
+			branch=$(echo "$1" | cut -d / -f 7)
+			repodir=$(echo "$1" | cut -d / -f 8-)
+			;;
+		*gitlab.com/*)
+			branch=$(echo "$1" | cut -d / -f 8)
+			repodir=$(echo "$1" | cut -d / -f 9-)
+			;;
+		*) # will add more git service
+			branch=$(echo "$1" | cut -d / -f 8)
+			repodir=$(echo "$1" | cut -d / -f 9-)
+			;;
+	esac
+
+	# if branch not in the url, assume it master branch
+	[ "$branch" ] || branch=master
+
+	# cloning ports repository
+	log_info_msg "fetching ports: ${yellow}$1${reset}";
+	git clone --depth 1 -q -b "$branch" "$url" "$tmprepo" || {
+		log_msg "failed sync repo" "1"
+	}
+	evaluate_retval
+
+	# copying ports to port directory by comparing
+	cmp_copy "$tmprepo/$repodir" "$portdir"
+
+	# cleanup tmp cloned repo
+	rm -fr "$tmprepo"
+	log_msg "ports synced  : ${orange}$2${reset}"
+}
+
+sh_setvarcolors
+
+if [ "$(id -u)" != 0 ]; then
+	die "this operation need root access."
+fi
+
+if [ ! -e "$repo_file" ]; then
+	die "missing repo file: ${yellow}$repo_file${reset}"
+fi
+
+#tmprepo=/tmp/tmprepo
+tmprepo=$(mktemp -d "/tmp/$APP"-XXXXXXXX || exit 1)
+grep -Ev '^(#|$)' "$repo_file" | awk '{print $1,$2}' | while read -r repodir repourl; do
+	if [ "$repodir" ] && [ "$repourl" ]; then
+		sync_repo "$repourl" "$repodir"
+	fi
+done
+rm -rf "${tmprepo:?}"
+log_msg "$?" "Cleaning temporary files ..."
+exit 0

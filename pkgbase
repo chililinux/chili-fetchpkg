@@ -1,0 +1,76 @@
+#!/bin/sh
+#
+#  scratchpkg
+#
+#  Copyright (c) 2018 by Emmett1  (emmett1.2miligrams@gmail.com)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+#
+#  script to remove all packages other than base and any user input
+#
+
+parseopt() {
+	while [ "$1" ]; do
+		case $1 in
+			-n) dryrun=1;;
+			-y) yes=$1;;
+			-h) printhelp; exit 0;;
+			*)  pkg="$pkg $1"
+		esac
+		shift
+	done
+}
+
+printhelp() {
+	cat << EOF
+Usage:
+  $(basename $0) [options] [packages]
+  
+Options:
+  -n  dry-run
+  -y  dont ask user confirmation
+  -h  print this help msg
+  
+EOF
+}
+
+error=0
+
+parseopt "$@"
+
+echo "Calculate packages to keep..."
+keep=$(scratch deplist base $pkg | awk '{print $2}')
+
+echo "Calculate selected packages to remove..."
+for pkg in $(scratch installed | awk '{print $1}'); do
+	echo $keep | tr ' ' '\n' | grep -qx $pkg || {
+		remove="$remove $pkg"
+	}
+done
+
+[ "$remove" ] && {
+	[ "$dryrun" = 1 ] && {
+		for i in $remove; do
+			echo "remove: $i..."
+		done
+		echo "This is dry-run, no real action is run!"
+	} || {
+		scratch remove $yes $remove || error=1
+	}
+} || {
+	echo "Already on base, nothing to remove."
+}
+
+exit $error

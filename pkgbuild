@@ -1,0 +1,886 @@
+#!/bin/bash
+#
+#  fetchpkg
+#
+#  Copyright (c) 2018 by Emmett1  (emmett1.2miligrams@gmail.com)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+. lib.sh
+. git.sh
+
+PKGBUILD_CONF="/etc/fetchpkg.conf"
+BUILD_SCRIPT="${BUILD_SCRIPT:-"spkgbuild"}"
+export SOURCE_DIR="/var/cache/fetch/sources"
+PACKAGE_DIR="/var/cache/fetch/packages"
+WORK_DIR="/var/cache/fetch/work"
+mkdir -p $SOURCE_DIR $PACKAGE_DIR $WORK_DIR
+COMPRESSION_MODE="xz"
+NO_STRIP="no"
+IGNORE_MDSUM="no"
+KEEP_LIBTOOL="no"
+KEEP_LOCALE="no"
+KEEP_DOC="no"
+
+pkg_genchecksums() {
+	for i in $(get_filepath); do
+		[ -f "$i" ] || {
+			msgerr "File missing: $i"
+			err=1
+		}
+	done
+	[ "$err" = 1 ] && abort 1
+	generatemdsum >.checksums
+	msg "Checksums updated."
+}
+
+generatemdsum() {
+	for s in $(get_filepath); do
+		if [ -f $s ]; then
+			needupdatechecksum="$needupdatechecksum $s"
+		fi
+	done
+	if [ "$needupdatechecksum" ]; then
+		md5sum $needupdatechecksum | sed -e 's|  .*/|  |' | sort -k 2
+		return 0
+	else
+		#		echo SKIP
+		return 1
+	fi
+}
+
+pkg_checksum() {
+	TMPCHECKSUM=$WORK_DIR/checksumstmp.$$
+	ORICHECKSUM=$WORK_DIR/checksumsori.$$
+	DIFCHECKSUM=$WORK_DIR/checksumsdiff.$$
+
+	if [ ! -f .checksums ]; then
+		pkg_genchecksums
+	else
+		if [ "$IGNORE_MDSUM" != "yes" ] && [ "$IGNORE_MDSUM" != 1 ]; then
+			log_info_msg "Checking checksums..."
+			generatemdsum >"$TMPCHECKSUM"
+			evaluate_retval
+			log_info_msg "Sorting..."
+			sort -k2 .checksums >"$ORICHECKSUM"
+			evaluate_retval
+			diff -w -t -U 0 "$ORICHECKSUM" "$TMPCHECKSUM" >"$DIFCHECKSUM"
+		fi
+	fi
+
+	[ -s "$DIFCHECKSUM" ] && {
+		mismatch=1
+		cat "$DIFCHECKSUM" |
+			sed '/---/d' |
+			sed '/+++/d' |
+			sed '/@@/d' |
+			sed 's/^-/ -> missing: /' |
+			sed 's/^+/ -> new    : /'
+	}
+
+	rm -f "$TMPCHECKSUM" "$DIFCHECKSUM" "$ORICHECKSUM"
+
+	[ "$mismatch" = 1 ] && abort 1
+}
+
+pkg_fetch() {
+	GIT_CLONE=0
+
+#debug ${source[*]}
+
+	for i in ${source[*]}; do
+		case $i in
+		git+*)
+			filepath="$SOURCE_DIR/${i%git+*}"
+#			url=${i#*git+}
+			url=$i
+			GIT_CLONE=1
+			;;
+		*::git*)
+			filepath="$SOURCE_DIR/${i%::*}"
+#			url=${i#*::}
+			url=$i
+			GIT_CLONE=1
+			;;
+		*::*)
+			filepath="$SOURCE_DIR/${i%::*}"
+			url=${i#*::}
+			;;
+		*://*)
+			filepath="$SOURCE_DIR/${i##*/}"
+			url=$i
+			;;
+		*)
+			continue
+			;;
+		esac
+
+		[ -f "$filepath" ] && {
+			log_msg "Source found: $filepath"
+			continue
+		}
+
+		if ((GIT_CLONE)); then
+			if [ "$QUIET" ]; then
+				{
+					export dir=$SOURCE_DIR/$name/$name
+					download_git $url $dir
+					export srcdir=$dir
+					extract_git $url $dir
+					mkdir -pv $WORK_DIR/$name/{pkg,src}/
+					mv -v $dir/$name $WORK_DIR/$name/src/
+				} >/dev/null 2>&1
+			else
+				repo=$(get_filename "$i")
+				export dir=$SOURCE_DIR/$name/$repo
+				export srcdir=$dir
+				download_git $url $dir
+				extract_git $url $dir
+				mkdir -pv $WORK_DIR/$name/{pkg,src}/
+				mv -v $dir/$repo $WORK_DIR/$name/src/
+			fi
+			GIT_CLONE=0
+		else
+			[ -f "$filepath.partial" ] && COPT="-C -"
+			msg "Fetching: $i"
+			curl $COPT -L --fail --ftp-pasv --retry 3 --retry-delay 3 -o $filepath.partial $CURL_OPTS $url || {
+				abort 1 "Fetching failed: $i"
+			}
+			mv $filepath.partial $filepath
+		fi
+	done
+}
+
+get_filepath() {
+	for i in ${source[*]}; do
+		case $i in
+		git+* | *::git*) continue ;;
+		*::*) echo $SOURCE_DIR/${i%::*} ;;
+		*://*) echo $SOURCE_DIR/${i##*/} ;;
+			#		*) echo $PWD/$i ;;
+		*) echo $ppath/$i ;;
+		esac
+	done
+}
+
+pkg_unpack() {
+	SRC=$WORK_DIR/$name/src
+	PKG=$WORK_DIR/$name/pkg
+	srcdir=$SRC
+	pkgdir=$PKG
+
+	#	(( GIT_CLONE )) && return
+
+	umask 022
+	#	rm -fr $WORK_DIR/$name
+	mkdir -p $SRC $PKG
+	TAR=tar
+	[ $(command -v bsdtar) ] && TAR=bsdtar
+
+	for i in $(get_filepath); do
+		if [ ! -f "$i" ]; then
+			abort 1 "Source missing: $i"
+		fi
+		for n in $noextract; do
+			if [ ${i##*/} = $n ]; then
+				msg "Preparing: $i"
+				cp $i $SRC || {
+					abort 1 "Preparing failed: $i"
+				}
+				continue 2
+			fi
+		done
+		case $i in
+		*.tar | *.tar.gz | *.tar.Z | *.tgz | *.tar.bz2 | *.tar.lz | *.tbz2 | *.tar.xz | *.txz | *.tar.lzma | *.zip | *.rpm| *.tar.lz)
+			$TAR -p -o -C $SRC -xf $i
+			log_msg "Unpacking: $i"
+			;;
+		*)
+			cp $i $SRC
+			log_msg "Preparing: $i"
+			;;
+		esac
+		[ $? = 0 ] || {
+			abort 1 "Unpacking/Preparing failed: $i"
+		}
+	done
+}
+
+pkg_build() {
+	[ "$(id -u)" = 0 ] || {
+		abort 1 "You must build package as root, or use fakeroot."
+	}
+
+	log_msg "Build start: $name-$version-$release"
+	cd $SRC >/dev/null
+	if [ "$QUIET" ]; then
+		if [ "$(command -v pkgver)" ]; then
+			log_info_msg "└+    pkgver()"
+			{
+				set -e
+				pkgver
+			} >/dev/null 2>&1
+			retval="$?"
+			evaluate_retval $? 2
+		fi
+		if [ "$(command -v prepare)" ]; then
+			log_info_msg "└+    prepare()"
+			{
+				set -e
+				prepare
+			} >/dev/null 2>&1
+			retval="$?"
+			evaluate_retval $? 2
+		fi
+		if [ "$(command -v build)" ]; then
+			log_info_msg "└+    build()"
+			{
+				set -e
+				build
+			} >/dev/null 2>&1
+			retval="$?"
+			evaluate_retval $retval
+		fi
+		if [ "$(command -v check)" ]; then
+			log_info_msg "└+    check()"
+			{
+				set -e
+				check
+			} >/dev/null 2>&1
+			retval="$?"
+			evaluate_retval $? 2
+		fi
+
+		if [[ -n "$pkgbase" ]]; then
+			for pkgs in ${pkgname[*]}; do
+				name=$pkgs
+				PKGNAME="$name-$version-$release.spkg.tar.$COMPRESSION_MODE"
+				if [ "$(command -v package_${pkgs})" ]; then
+					log_info_msg "└+    package_${pkgs}()"
+					{
+						set -e
+						package_${pkgs}
+						pkg_package
+						log_msg "$(gettext "Construindo"): mkfetch"
+						mkfetch $pkgs
+					} >/dev/null 2>&1
+					retval="$?"
+					evaluate_retval $? 2
+					log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
+					log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
+				fi
+			done
+		else
+			if [ "$(command -v package)" ]; then
+				log_info_msg "└+    package()"
+				{
+					set -e
+					package
+				} >/dev/null 2>&1
+				retval="$?"
+				evaluate_retval $? 2
+			elif [ "$(command -v package_$name)" ]; then
+				log_info_msg "└+    package_$name()"
+				{
+					set -e
+					package_$name
+				} >/dev/null 2>&1
+			fi
+			{
+				pkg_package
+				log_msg "$(gettext "Construindo"): mkfetch"
+				mkfetch
+			} >/dev/null 2>&1
+			retval="$?"
+			log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
+			log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
+
+			if [ $retval != 0 ]; then
+				abort 1 "${red}Build failed: $name-$version-$release${reset}"
+			else
+				log_msg 0 "${green}Build success: $name-$version-$release${reset}"
+			fi
+		fi
+	else
+		[ "$(command -v pkgver)" ] && (
+			set -e
+			pkgver
+		)
+		[ "$(command -v prepare)" ] && (
+			set -e
+			prepare
+		)
+		[ "$(command -v build)" ] && (
+			set -e
+			build
+		)
+		retval="$?"
+		[ "$(command -v check)" ] && (
+			set -e
+			check
+		)
+
+		if [[ -n "$pkgbase" ]]; then
+			for pkgs in ${pkgname[*]}; do
+				name=$pkgs
+				PKGNAME="$name-$version-$release.spkg.tar.$COMPRESSION_MODE"
+				[ "$(command -v package_${pkgs})" ] && {
+					set -e
+					package_${pkgs}
+					pkg_package
+					log_msg "$(gettext "Construindo"): mkfetch"
+					mkfetch $pkgs
+					log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
+					log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
+				}
+			done
+		else
+			if [ "$(command -v package)" ]; then
+				{
+					set -e
+					package
+				}
+			elif [ "$(command -v package_$name)" ]; then
+				{
+					set -e
+					package_$name
+				}
+			fi
+			pkg_package
+			log_msg "$(gettext "Construindo"): mkfetch"
+			mkfetch
+			log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
+			log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
+			if [ $retval != 0 ]; then
+				abort 1 "${red}Build failed: $name-$version-$release${reset}"
+			else
+				log_msg 0 "${green}Build success: $name-$version-$release${reset}"
+			fi
+		fi
+	fi
+
+	#	if [ $retval != 0 ]; then
+	#		abort 1 "${red}Build failed: $name-$version-$release${reset}"
+	#	else
+	#		log_msg 0 "${green}Build success: $name-$version-$release${reset}"
+	#	fi
+	cd - >/dev/null
+
+	#	pkg_package
+	#	log_msg "$(gettext "Construindo"): mkfetch"
+	#	mkfetch
+
+}
+
+pkglint() {
+	linterror=0
+
+	# cant package empty PKG
+	if [ ! "$(find $PKG/* -maxdepth 1 -type d 2>/dev/null)" ]; then
+		abort 1 "PKG is empty"
+	fi
+
+	# check for backup file
+	for f in ${backup[*]}; do
+		if [ ! -f $PKG/$f ]; then
+			msgerr "Backup file '$f' does not exist in PKG!"
+			linterror=1
+		fi
+	done
+	unset backup
+
+	if [ "$linterror" = 1 ]; then
+		abort 1
+	fi
+}
+
+strip_files() {
+	if [ "$nostrip" ]; then
+		for i in $nostrip; do
+			xstrip="$xstrip -e $i"
+		done
+		FILTER="grep -v $xstrip"
+	else
+		FILTER="cat"
+	fi
+
+	find . -type f -printf "%P\n" 2>/dev/null | $FILTER | while read -r binary; do
+		case "$(file -bi "$binary")" in
+		*application/x-sharedlib*) # Libraries (.so)
+			${CROSS_COMPILE}strip --strip-unneeded "$binary" 2>/dev/null ;;
+		*application/x-pie-executable*) # Libraries (.so)
+			${CROSS_COMPILE}strip --strip-unneeded "$binary" 2>/dev/null ;;
+		*application/x-archive*) # Libraries (.a)
+			${CROSS_COMPILE}strip --strip-debug "$binary" 2>/dev/null ;;
+		*application/x-object*)
+			case "$binary" in
+			*.ko) # Kernel module
+				${CROSS_COMPILE}strip --strip-unneeded "$binary" 2>/dev/null ;;
+			*)
+				continue
+				;;
+			esac
+			;;
+		*application/x-executable*) # Binaries
+			${CROSS_COMPILE}strip --strip-all "$binary" 2>/dev/null ;;
+		*)
+			continue
+			;;
+		esac
+	done
+}
+
+compressinfomanpages() {
+	find . -type f -path "*/share/man/*" | while read -r file; do
+		if [ "$file" = "${file%%.gz}" ]; then
+			gzip -9 -f "$file"
+		fi
+	done
+	find . -type l -path "*/share/man/*" | while read -r file; do
+		FILE="${file%%.gz}.gz"
+		TARGET="$(readlink $file)"
+		TARGET="${TARGET##*/}"
+		TARGET="${TARGET%%.gz}.gz"
+		DIR=$(dirname "$FILE")
+		rm -f $file
+		if [ -e "$DIR/$TARGET" ]; then
+			ln -sf $TARGET $FILE
+		fi
+	done
+	find . -type f -path "*/share/info/*" | while read -r file; do
+		if [ "$file" = "${file%%.gz}" ]; then
+			gzip -9 -f "$file"
+		fi
+	done
+}
+
+pkg_package() {
+	# lint $PKG before packaging
+	pkglint
+
+	cd $PKG >/dev/null
+
+	# remove possible conflict junks
+	rm -f usr/share/info/dir usr/info/dir
+	rm -f usr/lib/charset.alias # on musl system
+	find . \( -name perllocal.pod -o -name .packlist \) -delete
+	[ -d usr/share/fonts ] && {
+		find usr/share/fonts \( -name fonts.dir -o -name fonts.scale \) -delete
+	}
+
+	if [ "$KEEP_LIBTOOL" = 0 ] || [ "$KEEP_LIBTOOL" = "no" ]; then
+		find . ! -type d -name "*.la" -delete
+	fi
+
+	if [ "$KEEP_LOCALE" = 0 ] || [ "$KEEP_LOCALE" = "no" ]; then
+		rm -fr usr/share/locale usr/locale usr/lib/locale
+	fi
+
+	if [ "$KEEP_DOC" = 0 ] || [ "$KEEP_DOC" = "no" ]; then
+		rm -fr usr/share/doc usr/share/gtk-doc usr/doc usr/gtk-doc
+	fi
+
+	if [ "$NO_STRIP" = 0 ] || [ "$NO_STRIP" = "no" ]; then
+		strip_files
+	fi
+
+	compressinfomanpages
+
+	if [ "$backup" ]; then
+		for FILE in ${backup[*]}; do
+			#			mv $FILE $FILE.spkgnew
+			mv $FILE $FILE.fetchnew
+		done
+	fi
+
+	[ "$FORCE_REBUILD" ] && rm -f "$PACKAGE_DIR/$PKGNAME"
+
+	case $COMPRESSION_MODE in
+	xz) COMPRESS="-J" ;;
+	gz) COMPRESS="-z" ;;
+	bz2) COMPRESS="-j" ;;
+	lz4) COMPRESS="--lz4" ;;
+	zstd) COMPRESS="--zstd" ;;
+	esac
+
+	XZ_DEFAULTS='-T0' tar -c $COMPRESS -f $PACKAGE_DIR/$PKGNAME * $addtotar || {
+		rm -f $PACKAGE_DIR/$PKGNAME
+		abort 1 "Packaging failed: $PKGNAME"
+	}
+
+	tar -tvf $PACKAGE_DIR/$PKGNAME | sort -k 6
+	#	mkfetch
+	#	log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))"
+	cd - >/dev/null
+
+	if [ ! -f .pkgfiles ] || [ "$(head -n1 .pkgfiles)" != "$name-$version-$release" ]; then
+		pkg_genpkgfiles
+	fi
+}
+
+pkg_genpkgfiles() {
+	[ -f "$PACKAGE_DIR/$PKGNAME" ] || {
+		die "Package not found: $PKGNAME"
+	}
+
+	echo "$name-$version-$release" >.pkgfiles
+
+	tar -tvf "$PACKAGE_DIR/$PKGNAME" |
+		awk '{$3=$4=$5=""; print $0}' |
+		sort -k 3 >>.pkgfiles
+	msg "Pkgfiles updated."
+}
+
+pkg_clean() {
+	[ -e "$PACKAGE_DIR/$PKGNAME" ] && {
+		rm -f "$PACKAGE_DIR/$PKGNAME"
+		msg "Package removed: $PACKAGE_DIR/$PKGNAME"
+	}
+	for i in $(get_filepath); do
+		case $i in
+		$PWD/*) continue ;;
+		esac
+		[ -e "$i" ] && {
+			rm -f "$i"
+			msg "File removed: $i"
+		}
+		[ -e "$i.partial" ] && {
+			rm -f "$i.partial"
+			msg "File removed: $i.partial"
+		}
+	done
+}
+
+check_buildscript() {
+	# check the required field in buildscript
+	[ "$name" ] || {
+		if [ "$pkgname" ]; then
+			name=$pkgname
+			[ "$(basename $(pwd))" != "$name" ] && name=$pkgbase
+		else
+			die "'name' is empty!"
+		fi
+	}
+	case $name in
+	*[A-Z]*) die "Capital letters for port name are not allowed!" ;;
+	esac
+#	[ "$(basename $(pwd))" = "$name" ] || { die "Port name and Directory name is different!"; }
+
+	[ "$version" ] || {
+		if [ "$pkgver" ]; then
+			version=$pkgver
+		else
+			die "'version' is empty!"
+		fi
+	}
+
+	[ "$release" ] || {
+		if [ "$pkgrel" ]; then
+			release=$pkgrel
+		else
+			die "'release' is empty!"
+		fi
+	}
+	case $release in
+	*[A-Z]* | *[a-z]* | *-* | *\.* | *_*) die "only numberic allowed in 'release'" ;;
+	esac
+
+#	[ "$(command -v build)" ] || { die "'build' function not exist!"; }
+
+	echo "$version" | grep -q '-' && { die "'version' should not contain '-'."; }
+	if [ "$release" -gt 99 ] || [ "$release" -lt 1 ]; then
+		die "'release' should numberic between 1 to 99"
+	fi
+	[ "$description" ] || {
+		if [ "$pkgdesc" ]; then
+			description=$pkgdesc
+		else
+#			die "'description' is empty!"
+			:
+		fi
+	}
+}
+
+checkdir() {
+	for DIR in "$@"; do
+		if [ ! -d $DIR ]; then
+			die "Directory '$DIR' does not exist."
+		elif [ ! -w $DIR ]; then
+			die "Directory '$DIR' not writable."
+		elif [ ! -x $DIR ] || [ ! -r $1 ]; then
+			die "Directory '$DIR' not readable."
+		fi
+	done
+}
+
+pkg_cleanup() {
+	if [ ! "$KEEP_WORK" ]; then
+		if [ "$name" ]; then
+			rm -fr "$WORK_DIR/$name"
+		fi
+	fi
+}
+
+interrupted() {
+	echo
+	abort 100
+}
+
+parse_opts() {
+	while [ "$1" ]; do
+		case $1 in
+		-q | --quiet) QUIET=yes ;;
+		-i | --install) INSTALL_PKG=yes ;;
+		-u | --upgrade)
+			UPGRADE_PKG=yes
+			OPTS="$OPTS $1"
+			;;
+		-r | --reinstall)
+			REINSTALL_PKG=yes
+			OPTS="$OPTS $1"
+			;;
+		-c | --ignore-conflict) OPTS="$OPTS $1" ;;
+		-v | --verbose) OPTS="$OPTS $1" ;;
+		-f | --force |--force-rebuild) FORCE_REBUILD=yes ;;
+		-m | --skip-mdsum) IGNORE_MDSUM=yes ;;
+		-g | --genmdsum) UPDATE_MDSUM=yes ;;
+		-o | --download) DOWNLOAD_ONLY=yes ;;
+		-x | --extract) EXTRACT_ONLY=yes ;;
+		-w | --keep-work) KEEP_WORK=yes ;;
+		-p | --pkgfiles) GENPKGFILES=yes ;;
+		-h | --help) SHOWHELP=yes ;;
+		--git) GITLAB=1 ;;
+		--clean) CLEANUP=yes ;;
+		--no-backup) OPTS="$OPTS $1" ;;
+		--root=*) OPTS="$OPTS $1" ;;
+		--config=*) PKGBUILD_CONF="${1#*=}" ;;
+		--srcdir=*) CUSTOM_SOURCE_DIR="${1#*=}" ;;
+		--pkgdir=*) CUSTOM_PACKAGE_DIR="${1#*=}" ;;
+		--workdir=*) CUSTOM_WORK_DIR="${1#*=}" ;;
+		*)
+			msg "Invalid $(basename $0) option! ($1)"
+			exit 1
+			;;
+		esac
+		shift
+	done
+}
+
+help() {
+	cat <<EOF
+Usage:
+  $(basename $0) [ <options> <arguments> ]
+
+Options:
+  -q  --quiet               show only status messages and errors
+  -i, --install             install package into system
+  -u, --upgrade             upgrade package
+  -r, --reinstall           reinstall package
+  -c, --ignore-conflict     ignore conflict when installing package
+  -v, --verbose             verbose install process
+  -f, --force-rebuild       rebuild package
+  -m, --skip-mdsum          skip md5sum checking
+  -g, --genmdsum            generate md5sum
+  -o, --download            download only source file
+  -x, --extract             extract only source file
+  -p, --pkgfiles            generate list files in package
+  -w, --keep-work           keep working directory
+  -h, --help                show this help message
+      --git                 Baixar PKGBUILD de gitlab.archlinux.org
+      --clean               remove downloaded sources and prebuilt packages
+      --config=<config>     use custom config file
+      --srcdir=<path>       override directory path for sources
+      --pkgdir=<path>       override directory path for compiled package
+      --workdir=<path>      override directory path for working dir
+      --no-backup           skip backup configuration file when upgrading package
+
+EOF
+}
+
+extract_opts() {
+	while [ "$1" ]; do
+		case $1 in
+		--*) opts="$opts $1" ;;
+		-*)
+			char=${#1}
+			count=1
+			while [ "$count" != "$char" ]; do
+				count=$((count + 1))
+				opts="$opts -$(echo $1 | cut -c $count)"
+			done
+			;;
+		*) opts="$opts $1" ;;
+		esac
+		shift
+	done
+	echo $opts
+}
+
+main() {
+	parse_opts $(extract_opts "$@")
+
+	if [ -f "$PKGBUILD_CONF" ]; then
+		. "$PKGBUILD_CONF"
+	else
+		die "Config file not found: $PKGBUILD_CONF"
+	fi
+
+	[ "$CUSTOM_SOURCE_DIR" ] && SOURCE_DIR="$CUSTOM_SOURCE_DIR"
+	[ "$CUSTOM_PACKAGE_DIR" ] && PACKAGE_DIR="$CUSTOM_PACKAGE_DIR"
+	[ "$CUSTOM_WORK_DIR" ] && WORK_DIR="$CUSTOM_WORK_DIR"
+
+	checkdir "$SOURCE_DIR" "$PACKAGE_DIR" "$WORK_DIR"
+
+	# show usage
+	[ "$SHOWHELP" ] && {
+		help
+		exit 0
+	}
+
+	sh_seek_script "$PWD"
+	log_msg 0 "${black}Usando script: ${pink}$PWD/$BUILD_SCRIPT"
+	if [ -f "$BUILD_SCRIPT" ]; then
+		export URL
+		export source
+		#		description=$(grep "^# description[[:blank:]]*:" $BUILD_SCRIPT | sed 's/^# description[[:blank:]]*:[[:blank:]]*//')
+		description=$(sed -n 's/^# description[[:blank:]]*:[[:blank:]]*//p' "$BUILD_SCRIPT")
+		export DESC=$(sed -n 's/^# description[[:blank:]]*:[[:blank:]]*//p' "$BUILD_SCRIPT")
+		maint=$(sed -n 's/^# maintainer[[:blank:]]*:[[:blank:]]*//p' "$BUILD_SCRIPT")
+		homep=$(sed -n 's/^# homepage[[:blank:]]*:[[:blank:]]*//p' "$BUILD_SCRIPT")
+		. ./$BUILD_SCRIPT
+		URL=$source
+	else
+		die "'$BUILD_SCRIPT' file not found."
+	fi
+
+	check_buildscript
+
+	case $COMPRESSION_MODE in
+	gz | bz2 | xz | lz4 | zstd) PKGNAME="$name-$version-$release.spkg.tar.$COMPRESSION_MODE" ;;
+	*) die "Invalid compression mode: $COMPRESSION_MODE" ;;
+	esac
+
+	# generate .pkgfiles
+	[ "$GENPKGFILES" ] && {
+		pkg_genpkgfiles
+		exit 0
+	}
+
+	# download source only
+	[ "$DOWNLOAD_ONLY" ] && {
+		pkg_fetch
+		exit 0
+	}
+
+	# extract source only
+	[ "$EXTRACT_ONLY" ] && {
+		pkg_unpack
+		exit 0
+	}
+
+	# update md5sum
+
+	SKIP_CHECKSUM=1
+	if [[ "${sha512sums[@]}" != 'SKIP' ]]; then
+		[ "$UPDATE_MDSUM" ] && {
+			SKIP_CHECKSUM=0
+			pkg_genchecksums
+			exit 0
+		}
+	fi
+
+	# remove source and package
+	[ "$CLEANUP" ] && {
+		pkg_clean
+		exit 0
+	}
+
+
+	# check for lock file
+#	sh_check_lockfile "$name"
+#	LOCK_FILE="/tmp/pkgbuild.$name.lock"
+
+	# create lock file
+#	touch "$LOCK_FILE" 2>/dev/null || {
+#		die "Cannot create lock file in '$LOCK_FILE'."
+#	}
+
+	# build package
+	if [ -f "$PACKAGE_DIR/$PKGNAME" ] && [ ! "$FORCE_REBUILD" ]; then
+		if [ ! "$INSTALL_PKG" ] && [ ! "$REINSTALL_PKG" ] && [ ! "$UPGRADE_PKG" ]; then
+			abort 0 "${green}$(gettext "Pacote está atualizado"): ${yellow}$PACKAGE_DIR/$PKGNAME"
+		fi
+	else
+		log_msg 0 "${pink}$(gettext "Construindo"): $name-$version-$release${reset}"
+		if [ "$QUIET" ]; then
+			pkg_fetch 2>/dev/null
+			if ! ((SKIP_CHECKSUM)); then
+				pkg_checksum
+			fi
+			pkg_unpack
+			pkg_build
+
+			#			pkg_package >/dev/null 2>&1
+			#			log_msg "$(gettext "Construindo"): mkfetch"
+			#			mkfetch >/dev/null 2>&1
+			#			log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))"
+			#			log_msg "${green}Packaging success: ${yellow}$PKG.$PKG_EXT ($(ls -lh $PKG.$PKG_EXT | awk '{print $5}'))"
+			pkg_cleanup >/dev/null
+			echo
+		else
+			pkg_fetch 2>/dev/null
+			if ! ((SKIP_CHECKSUM)); then
+				pkg_checksum
+			fi
+			pkg_unpack
+			pkg_build
+
+			#			pkg_package
+			#			log_msg "$(gettext "Construindo"): mkfetch"
+			#			mkfetch
+			#			log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))"
+			#			log_msg "${green}Packaging success: ${yellow}$PKG.$PKG_EXT ($(ls -lh $PKG.$PKG_EXT | awk '{print $5}'))"
+			pkg_cleanup >/dev/null
+			echo
+		fi
+	fi
+
+	# install package
+	if [ "$INSTALL_PKG" ] || [ "$REINSTALL_PKG" ] || [ "$UPGRADE_PKG" ]; then
+		pkgadd $PACKAGE_DIR/$PKGNAME $INST_OPT $OPTS || abort 1
+	fi
+	abort 0
+}
+
+if [ -z "$pkg" ]; then
+	pkg=$1
+	shift
+
+	BUILD_SCRIPT="${BUILD_SCRIPT:-"spkgbuild"}"
+	REPO_FILE="${REPO_FILE:-/etc/fetchpkg.repo}"
+	if [ -f "$REPO_FILE" ]; then
+		while read -r repodir _; do
+			PORT_REPO="$PORT_REPO $repodir"
+		done <"$REPO_FILE"
+	fi
+
+	ppath=$(getportpath "$pkg") || {
+		msg_portnotfound "$pkg"
+		exit 1
+	}
+	cd "$ppath" || exit 1
+fi
+
+main "$@"

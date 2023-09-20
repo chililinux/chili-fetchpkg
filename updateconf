@@ -1,0 +1,82 @@
+#!/bin/sh
+#
+#  scratchpkg
+#
+#  Copyright (c) 2018 by Emmett1  (emmett1.2miligrams@gmail.com)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+
+EDITOR=${EDITOR:-vi}
+
+command -v $EDITOR >/dev/null || {
+	echo "Editor '$EDITOR' not exist. Append 'EDITOR=<your editor>' to ${0##*/}."
+	exit 2
+}
+
+[ "$(id -u)" = 0 ] || {
+	echo "This operation need root access. Exiting..."
+	exit 1
+}
+
+spkgnew=$(find /etc -regextype posix-extended -regex ".+\.spkgnew" 2> /dev/null)
+
+[ "$spkgnew" ] || {
+	echo "Nothing to do. Exiting..."
+	exit 0
+}
+
+for file in $spkgnew; do
+	currentfile=${file%.*}
+	if [ ! -e "$currentfile" ]; then
+		echo "Remove '$file', '$currentfile' not exist."
+		rm -f "$file"
+		sleep 1
+		continue
+	fi
+	while true; do
+		clear
+		diff -u $currentfile $file --color=always
+		if [ $? = 0 ]; then
+			echo "Remove '$file', no diff found."
+			rm -f "$file"
+			sleep 1
+			break
+		fi
+		echo
+		echo "File: $currentfile"
+		echo
+		printf "[U]pdate [D]iscard [E]dit [K]eep ?: "
+		read ACTION
+		echo
+		case $ACTION in
+			U|u) echo "Replace '$currentfile' with '$file'."
+			     mv -f "$file" "$currentfile"
+			     break;;
+			D|d) echo "Remove '$file'."
+			     rm -f "$file"
+			     break;;
+			E|e) vim "$currentfile";;
+			K|k) echo "Keeping both."
+			     break;;
+		esac
+	done
+	sleep 1
+done
+
+clear
+
+echo "Done updating package's configuration files."
+
+exit 0
