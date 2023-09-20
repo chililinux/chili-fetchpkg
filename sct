@@ -24,9 +24,9 @@
 . lib.sh
 
 declare -gA git_hosts=(
-	[gitlab]="https://gitlab.archlinux.org/archlinux/packaging/packages"
 	[aur]="https://aur.archlinux.org"
 	[biglinux]="https://github.com/biglinux"
+	[gitlab]="https://gitlab.archlinux.org/archlinux/packaging/packages"
 )
 #declare -g host_gitlab="https://gitlab.archlinux.org/archlinux/packaging/packages"
 #declare -g host_aur="https://aur.archlinux.org"
@@ -535,9 +535,23 @@ sh_git_clone_pkg() {
 comment
 
 	for irepo in "${git_hosts[@]}"; do
+		lsearch=0
 		log_msg "Procurando em: ${black}${irepo}${reset}"
-		if response=$(curl --insecure --compressed -s -w "%{http_code}\n" -o /dev/null -k --url ${irepo}/$pkgname) && [[ $response -eq 200 ]]; then
-			log_msg "Encontrado em: ${irepo}${cyan}/${pkgname}${reset}"
+		if [[ $irepo == *aur* ]]; then
+			if response=$(git ls-remote --quiet ${irepo}/$pkgname.git) &&
+			[[ -n "$response" ]]
+			then
+				lsearch=1
+			fi
+		else
+			if response=$(curl --insecure --compressed -s -w "%{http_code}\n" -o /dev/null -k --url ${irepo}/$pkgname.git) &&
+			[[ "$response" == "200" || "$response" == "301" || "$response" == "302" ]]
+			then
+				lsearch=1
+			fi
+		fi
+		if ((lsearch)); then
+			log_msg "Encontrado em: ${green}${irepo}${cyan}/${pkgname}${reset}"
 			if ! git clone --depth 1 $irepo/$pkgname.git $path_pkgfullname; then
 				log_msg 1 "Falha ao clonar: ${irepo}${cyan}/${pkgname}${reset}"
 				return 1
