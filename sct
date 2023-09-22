@@ -23,7 +23,14 @@
 
 . lib.sh
 
-declare -gA git_hosts=(
+#declare -gA git_hosts=(
+declare -ga git_hosts=(
+	[manjaro]='https://gitlab.manjaro.org/applications'
+	[manjaro-community]='https://gitlab.manjaro.org/packages/community'
+	[manjaro-extra]='https://gitlab.manjaro.org/packages/extra'
+	[manjaro-kde-unstable]='https://gitlab.manjaro.org/packages/kde-unstable'
+	[manjaro-multilib]='https://gitlab.manjaro.org/packages/multilib'
+	[manjaro-core]='https://gitlab.manjaro.org/packages/core'
 	[aur]="https://aur.archlinux.org"
 	[biglinux]="https://github.com/biglinux"
 	[gitlab]="https://gitlab.archlinux.org/archlinux/packaging/packages"
@@ -508,8 +515,8 @@ sh_git_clone_pkg() {
 	fi
 	#comment
 
-	tmp=$(mktemp -d --tmpdir=/tmp/fetchpack $pkgname-XXX)
 	mkdir -p /tmp/fetchpack
+	tmp=$(mktemp -d --tmpdir=/tmp/fetchpack $pkgname-XXX)
 	mv -f $path_pkgfullname $tmp >/dev/null 2>&1
 
 	: <<'comment'

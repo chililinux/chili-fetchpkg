@@ -83,7 +83,7 @@ msg_depsstatus() {
 	unset i
 }
 
-needroot() {	
+needroot() {
 	if [ "$(id -u)" != 0 ]; then
 		if [ "$#" -eq 0 ]; then
 			needroot "This operation"
@@ -91,20 +91,20 @@ needroot() {
 			echo "$* need root access!"
 		fi
 		exit 1
-	fi	
+	fi
 }
 
-getportpath() {	
+getportpath() {
 	for repo in $PORT_REPO; do
 		if [ -f "$repo/$1/$BUILD_SCRIPT" ]; then
 			dirname "$repo/$1/$BUILD_SCRIPT"
 			return 0
 		fi
 	done
-	return 1	
+	return 1
 }
 
-vercomp() {	
+vercomp() {
 	if [ "$1" = "$2" ]; then
 		return 0 # same version
 	elif [ "$1" = "$(echo "$1\n$2" | sort -V | head -n1)" ]; then
@@ -122,7 +122,7 @@ get_irelease() {
 	head -n1 $PKGDB_DIR/$1 2>/dev/null | awk '{print $2}'
 }
 
-allinstalled() {	
+allinstalled() {
 	for i in $PKGDB_DIR/*; do
 		echo ${i##*/}
 	done
@@ -147,11 +147,11 @@ deps_alias() {
 
 get_depends() {
 	ppath=$(getportpath $1) || return 0
-	deps=$(grep "^# depends[[:blank:]]*:" $ppath/$BUILD_SCRIPT \
-	| sed 's/^# depends[[:blank:]]*:[[:blank:]]*//' \
-	| tr ' ' '\n' \
-	| awk '!a[$0]++' \
-	| sed 's/,//')
+	deps=$(grep "^# depends[[:blank:]]*:" $ppath/$BUILD_SCRIPT |
+		sed 's/^# depends[[:blank:]]*:[[:blank:]]*//' |
+		tr ' ' '\n' |
+		awk '!a[$0]++' |
+		sed 's/,//')
 	deps_alias $deps
 }
 
@@ -159,17 +159,20 @@ confirm() {
 	printf "$1 (Y/n) "
 	read -r response
 	case "$response" in
-		[Nn][Oo]|[Nn]) echo "$2"; return 2 ;;
-		*) : ;;
+	[Nn][Oo] | [Nn])
+		echo "$2"
+		return 2
+		;;
+	*) : ;;
 	esac
 	return 0
 }
 
-checktool() {	
+checktool() {
 	if ! command -v $1 >/dev/null; then
 		msgerr "'$1' not exist in your system!"
 		exit 1
-	fi	
+	fi
 }
 
 needarg() {
@@ -186,34 +189,34 @@ settermtitle() {
 scratch_integrity() {
 	if [ "$1" ]; then
 		cd /
-			if [ -f $PKGDB_DIR/$1 ]; then
-				tail -n+2 $PKGDB_DIR/$1 | while read -r line; do
-					if [ ! -e "$line" ]; then
-						if [ -L "$line" ]; then
-							printf "${YELLOW}broken symlink${CRESET} $1: /$line"
-						else
-							printf "${RED}file missing${CRESET} $1: /$line"
-						fi
+		if [ -f $PKGDB_DIR/$1 ]; then
+			tail -n+2 $PKGDB_DIR/$1 | while read -r line; do
+				if [ ! -e "$line" ]; then
+					if [ -L "$line" ]; then
+						printf "${YELLOW}broken symlink${CRESET} $1: /$line"
+					else
+						printf "${RED}file missing${CRESET} $1: /$line"
 					fi
-				done
-			else
-				msg_portnotinstalled $1
-				exit 1
-			fi
+				fi
+			done
+		else
+			msg_portnotinstalled $1
+			exit 1
+		fi
 		cd - >/dev/null
 	else
 		cd /
-			for pkg in $(allinstalled); do
-				tail -n+2 $PKGDB_DIR/$pkg | while read -r line; do
-					if [ ! -e "$line" ]; then
-						if [ -L "$line" ]; then
-							echo "broken symlink $pkg: /$line"
-						else
-							echo "missing file $pkg: /$line"
-						fi
+		for pkg in $(allinstalled); do
+			tail -n+2 $PKGDB_DIR/$pkg | while read -r line; do
+				if [ ! -e "$line" ]; then
+					if [ -L "$line" ]; then
+						echo "broken symlink $pkg: /$line"
+					else
+						echo "missing file $pkg: /$line"
 					fi
-				done
+				fi
 			done
+		done
 		cd - >/dev/null
 	fi
 }
@@ -225,34 +228,45 @@ scratch_locate() {
 	done
 }
 
-scratch_sync() {	
+scratch_sync() {
 	portsync
 }
 
 cvperms() {
 	# converts symbolic to numeric permissions
 	# required an input (symbolic, eg: drwxr-xr-x)
-	s=0; n=0; count=0
+	s=0
+	n=0
+	count=0
 	for i in $(echo "$1" | sed -e 's/\(.\)/\1\n/g'); do
-		count=$((count+1))
+		count=$((count + 1))
 		case $i in
-			d) ;;
-			r) n=$((n+4));;
-			w) n=$((n+2));;
-			x) n=$((n+1));;
-			s) [ $count = 4 ] && s=$((s+4)) || s=$((s+2)); n=$((n+1));;
-			t) s=$((s+1));n=$((n+1));;
-			S) s=$((s+2));;
-			T) s=$((s+1));;
+		d) ;;
+		r) n=$((n + 4)) ;;
+		w) n=$((n + 2)) ;;
+		x) n=$((n + 1)) ;;
+		s)
+			[ $count = 4 ] && s=$((s + 4)) || s=$((s + 2))
+			n=$((n + 1))
+			;;
+		t)
+			s=$((s + 1))
+			n=$((n + 1))
+			;;
+		S) s=$((s + 2)) ;;
+		T) s=$((s + 1)) ;;
 		esac
 		[ "$count" = 4 ] && {
-			user=$n; n=0
+			user=$n
+			n=0
 		}
 		[ "$count" = 7 ] && {
-			group=$n; n=0
+			group=$n
+			n=0
 		}
 		[ "$count" = 10 ] && {
-			other=$n; n=0
+			other=$n
+			n=0
 		}
 	done
 	echo "$s$user$group$other"
@@ -267,7 +281,7 @@ fixperms() {
 			echo $own | while IFS=/ read -r o g; do
 				chown $o:$g /$dir
 			done
-		done < $i
+		done <$i
 	done
 }
 
@@ -283,40 +297,40 @@ scratch_trigger() {
 	post_triggers
 }
 
-post_triggers() {	
+post_triggers() {
 	if [ "$trig_11" = 1 ] && [ $(command -v fc-cache) ]; then
 		echo "trigger: Updating fontconfig cache..."
 		fc-cache -s
 	fi
-	
+
 	if [ "$trig_10" = 1 ] && [ $(command -v gdk-pixbuf-query-loaders) ]; then
 		echo "trigger: Probing GDK-Pixbuf loader modules..."
 		gdk-pixbuf-query-loaders --update-cache
 	fi
-	
+
 	if [ "$trig_9" = 1 ] && [ $(command -v gio-querymodules) ]; then
 		echo "trigger: Updating GIO module cache..."
 		gio-querymodules /usr/lib/gio/modules
 	fi
-	
+
 	if [ "$trig_8" = 1 ] && [ $(command -v glib-compile-schemas) ]; then
 		echo "trigger: Compiling GSettings XML schema files..."
 		glib-compile-schemas /usr/share/glib-2.0/schemas
 	fi
-	
+
 	if [ "$trig_7" = 1 ] && [ $(command -v gtk-query-immodules-2.0) ]; then
 		echo "trigger: Probing GTK2 input method modules..."
 		gtk-query-immodules-2.0 --update-cache
 	fi
-	
+
 	if [ "$trig_6" = 1 ] && [ $(command -v gtk-query-immodules-3.0) ]; then
 		echo "trigger: Probing GTK3 input method modules..."
 		gtk-query-immodules-3.0 --update-cache
 	fi
-	
+
 	if [ "$trig_5" = 1 ] && [ $(command -v gtk-update-icon-cache) ]; then
 		echo "trigger: Updating icon theme caches..."
-		for dir in /usr/share/icons/* ; do
+		for dir in /usr/share/icons/*; do
 			if [ -e $dir/index.theme ]; then
 				gtk-update-icon-cache -q $dir 2>/dev/null
 			else
@@ -325,12 +339,12 @@ post_triggers() {
 			fi
 		done
 	fi
-	
+
 	if [ "$trig_4" = 1 ] && [ $(command -v udevadm) ]; then
 		echo "trigger: Updating hardware database..."
 		udevadm hwdb --update
 	fi
-	
+
 	if [ "$trig_3" = 1 ] && [ $(command -v mkfontdir) ] && [ $(command -v mkfontscale) ]; then
 		echo "trigger: Updating X fontdir indices..."
 		for dir in $(find /usr/share/fonts -maxdepth 1 -type d \( ! -path /usr/share/fonts \)); do
@@ -341,21 +355,21 @@ post_triggers() {
 			mkfontscale $dir
 		done
 	fi
-	
+
 	if [ "$trig_2" = 1 ] && [ $(command -v update-desktop-database) ]; then
 		echo "trigger: Updating desktop file MIME type cache..."
 		update-desktop-database --quiet
 	fi
-	
+
 	if [ "$trig_1" = 1 ] && [ $(command -v update-mime-database) ]; then
 		echo "trigger: Updating the MIME type database..."
 		update-mime-database /usr/share/mime
 	fi
-	
+
 	fixperms
 }
 
-pre_triggers() {	
+pre_triggers() {
 	# mime db
 	if [ "$trig_1" != "1" ]; then
 		for pkg in $@; do
@@ -365,7 +379,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# desktop db
 	if [ "$trig_2" != "1" ]; then
 		for pkg in $@; do
@@ -375,7 +389,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# mkfontdir
 	if [ "$trig_3" != "1" ]; then
 		for pkg in $@; do
@@ -385,7 +399,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# hwdb
 	if [ "$trig_4" != "1" ]; then
 		for pkg in $@; do
@@ -395,7 +409,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# icon caches
 	if [ "$trig_5" != "1" ]; then
 		for pkg in $@; do
@@ -405,7 +419,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# gtk3 immodules
 	if [ "$trig_6" != "1" ]; then
 		for pkg in $@; do
@@ -415,7 +429,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# gtk2 immodules
 	if [ "$trig_7" != "1" ]; then
 		for pkg in $@; do
@@ -425,7 +439,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# gsettings schema
 	if [ "$trig_8" != "1" ]; then
 		for pkg in $@; do
@@ -435,7 +449,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# gio modules
 	if [ "$trig_9" != "1" ]; then
 		for pkg in $@; do
@@ -445,7 +459,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# gdk-pixbuf
 	if [ "$trig_10" != "1" ]; then
 		for pkg in $@; do
@@ -455,7 +469,7 @@ pre_triggers() {
 			fi
 		done
 	fi
-	
+
 	# font caches
 	if [ "$trig_11" != "1" ]; then
 		for pkg in $@; do
@@ -470,10 +484,10 @@ pre_triggers() {
 scratch_build() {
 	while [ "$1" ]; do
 		case $1 in
-			-i|-u|-r|-g|-p) ;;
-			--log) LOG=1;;
-			-*) OPTS="$OPTS $1";;
-			 *) PKGNAME="$PKGNAME $1";;
+		-i | -u | -r | -g | -p) ;;
+		--log) LOG=1 ;;
+		-*) OPTS="$OPTS $1" ;;
+		*) PKGNAME="$PKGNAME $1" ;;
 		esac
 		shift
 	done
@@ -508,17 +522,20 @@ scratch_install() {
 	needroot "Installing package"
 	while [ "$1" ]; do
 		case $1 in
-			-i|-u) ;;
-			-r) REINSTALL=1;;
-			-o) DOWNLOAD_ONLY=1; OPTS="$OPTS $1";;
-			-y) NOCONFIRM=1;;
-			-n) NO_DEP=1;;
-			--exclude=*) EXOPT=$1;;
-			-*) OPTS="$OPTS $1";;
-			*) PKGNAME="$PKGNAME $1";;
+		-i | -u) ;;
+		-r) REINSTALL=1 ;;
+		-o)
+			DOWNLOAD_ONLY=1
+			OPTS="$OPTS $1"
+			;;
+		-y) NOCONFIRM=1 ;;
+		-n) NO_DEP=1 ;;
+		--exclude=*) EXOPT=$1 ;;
+		-*) OPTS="$OPTS $1" ;;
+		*) PKGNAME="$PKGNAME $1" ;;
 		esac
 		shift
-	done	
+	done
 	[ "$PKGNAME" ] || {
 		echo "Please specify package(s) to install."
 		return 1
@@ -533,12 +550,12 @@ scratch_install() {
 				msg_portnotinstalled $ii
 			else
 				cd $(getportpath $ii)
-					settermtitle "Reinstalling $ii..."
-					pkgbuild $OPTS -r || {
-						error=1
-						break
-					}
-					done_pkg="$done_pkg $ii"
+				settermtitle "Reinstalling $ii..."
+				pkgbuild $OPTS -r || {
+					error=1
+					break
+				}
+				done_pkg="$done_pkg $ii"
 				cd - >/dev/null
 			fi
 		done
@@ -556,13 +573,13 @@ scratch_install() {
 				continue
 			else
 				cd $(getportpath $ii)
-					settermtitle "Installing $ii..."
-					pkgbuild -i $OPTS || {
-						error=1
-						break
-					}
-					done_pkg="$done_pkg $ii"
-					world_add $ii
+				settermtitle "Installing $ii..."
+				pkgbuild -i $OPTS || {
+					error=1
+					break
+				}
+				done_pkg="$done_pkg $ii"
+				world_add $ii
 				cd - >/dev/null
 			fi
 		done
@@ -587,7 +604,7 @@ scratch_install() {
 		pkgcount=0
 		installmsg="ACTION#PORTNAME#VERSION"
 		for pkg in $INST; do
-			pkgcount=$(( pkgcount + 1 ))
+			pkgcount=$((pkgcount + 1))
 			installmsg="$installmsg install#$pkg#$(get_version $pkg)-$(get_release $pkg)"
 		done
 		echo $installmsg | tr ' ' '\n' | tr '#' ' ' | column -t
@@ -602,21 +619,21 @@ scratch_install() {
 		count=0
 		total=$(echo $INST | wc -w)
 		for int in $INST; do
-			count=$(( count + 1 ))
+			count=$((count + 1))
 			if portpathh=$(getportpath $int); then
 				cd $portpathh
-					settermtitle "[ $count/$total ] installing $int..."
-					run_preinstallsh
-					pkgbuild -i $OPTS || {
-						error=1
-						count=$(( count - 1 ))
-						break
-					}
-					if [ $(echo $IPKG | tr ' ' '\n' | grep -x $int) ]; then
-						world_add $int
-					fi
-					run_postinstallsh
-					done_pkg="$done_pkg $int"
+				settermtitle "[ $count/$total ] installing $int..."
+				run_preinstallsh
+				pkgbuild -i $OPTS || {
+					error=1
+					count=$((count - 1))
+					break
+				}
+				if [ $(echo $IPKG | tr ' ' '\n' | grep -x $int) ]; then
+					world_add $int
+				fi
+				run_postinstallsh
+				done_pkg="$done_pkg $int"
 				cd - >/dev/null
 			else
 				msgwarn "Skipping missing package: $int"
@@ -633,9 +650,9 @@ scratch_remove() {
 	needroot "Removing package"
 	while [ "$1" ]; do
 		case $1 in
-			-y|--yes) NOCONFIRM=1;;
-			-*) OPTS="$OPTS $1";;
-			*) PKGNAME="$PKGNAME $1";;
+		-y | --yes) NOCONFIRM=1 ;;
+		-*) OPTS="$OPTS $1" ;;
+		*) PKGNAME="$PKGNAME $1" ;;
 		esac
 		shift
 	done
@@ -657,7 +674,7 @@ scratch_remove() {
 	count=0
 	installmsg="ACTION#PORTNAME#VERSION"
 	for pkg in $IPKG; do
-		pkgcount=$(( pkgcount + 1 ))
+		pkgcount=$((pkgcount + 1))
 		installmsg="$installmsg remove#$pkg#$(get_iversion $pkg)-$(get_irelease $pkg)"
 	done
 	echo $installmsg | tr ' ' '\n' | tr '#' ' ' | column -t
@@ -669,7 +686,7 @@ scratch_remove() {
 		echo
 	}
 	for pkg in $IPKG; do
-		count=$(( count + 1 ))
+		count=$((count + 1))
 		pre_triggers $pkg
 		settermtitle "[ $count/$pkgcount ] Removing $pkg..."
 		echo "remove: $pkg-$(get_iversion $pkg)-$(get_irelease $pkg)..."
@@ -685,15 +702,18 @@ scratch_remove() {
 }
 
 scratch_sysup() {
-	needroot "Upgrading package"	
+	needroot "Upgrading package"
 	while [ "$1" ]; do
 		case $1 in
-			-i|-u|-r) ;;
-			-o) DOWNLOAD_ONLY=1; OPTS="$OPTS $1";;
-			-y) NOCONFIRM=1;;
-			-n) NODEP=1;;
-			--exclude=*) EXOPT=$1;;
-			-*) OPTS="$OPTS $1";;
+		-i | -u | -r) ;;
+		-o)
+			DOWNLOAD_ONLY=1
+			OPTS="$OPTS $1"
+			;;
+		-y) NOCONFIRM=1 ;;
+		-n) NODEP=1 ;;
+		--exclude=*) EXOPT=$1 ;;
+		-*) OPTS="$OPTS $1" ;;
 		esac
 		shift
 	done
@@ -702,8 +722,8 @@ scratch_sysup() {
 	# filter out masked
 	for i in $PKGOUTDATE; do
 		case $i in
-			*#1) continue;;
-			*) ii="$ii ${i%%#*}";;
+		*#1) continue ;;
+		*) ii="$ii ${i%%#*}" ;;
 		esac
 	done
 	EXPKG=${EXOPT#*=}
@@ -730,11 +750,11 @@ scratch_sysup() {
 			if [ "$(echo $PKG | tr ' ' '\n' | grep -x $d)" = "$d" ]; then
 				installmsg="$installmsg upgrade#$d#$(get_version $d)-$(get_release $d)#$(get_iversion $d)-$(get_irelease $d)"
 				WILLINSTALL="$WILLINSTALL $d"
-				UPGPKG=$(( UPGPKG + 1 ))
+				UPGPKG=$((UPGPKG + 1))
 			elif ! scratch_isinstalled $d && [ "$(getportpath "$d")" ]; then
 				installmsg="$installmsg install#$d#$(get_version $d)-$(get_release $d)#$(get_iversion $d)-$(get_irelease $d)"
 				WILLINSTALL="$WILLINSTALL $d"
-				NEWPKG=$(( NEWPKG + 1 ))
+				NEWPKG=$((NEWPKG + 1))
 			fi
 		done
 	else
@@ -742,7 +762,7 @@ scratch_sysup() {
 		for dd in $PKG; do
 			printf "[${GREEN}u${CRESET}] $dd  "
 			WILLINSTALL="$WILLINSTALL $dd"
-			UPGPKG=$(( UPGPKG + 1 ))
+			UPGPKG=$((UPGPKG + 1))
 		done
 	fi
 	echo $installmsg | tr ' ' '\n' | tr '#' ' ' | column -t
@@ -757,14 +777,14 @@ scratch_sysup() {
 	count=0
 	total=$(echo $WILLINSTALL | wc -w)
 	for inst in $WILLINSTALL; do # install all required dependencies and target packages itself
-		count=$(( count + 1 ))
+		count=$((count + 1))
 		cd $(getportpath $inst)
 		if ! scratch_isinstalled $inst; then
 			settermtitle "[ $count/$total ] Installing $inst..."
 			run_preinstallsh
 			pkgbuild -i $OPTS || {
 				error=1
-				count=$(( count - 1 ))
+				count=$((count - 1))
 				break
 			}
 			run_postinstallsh
@@ -773,7 +793,7 @@ scratch_sysup() {
 			run_preinstallsh
 			pkgbuild -u $OPTS || {
 				error=1
-				count=$(( count - 1 ))
+				count=$((count - 1))
 				break
 			}
 			run_postinstallsh
@@ -811,19 +831,22 @@ run_postinstallsh() {
 }
 
 scratch_upgrade() {
-	needroot "Upgrading package"	
+	needroot "Upgrading package"
 	while [ "$1" ]; do
 		case $1 in
-			-i|-r) ;;
-			-y) NOCONFIRM=1;;
-			-o) DOWNLOAD_ONLY=1; OPTS="$OPTS $1";;
-			-d) NO_DEP=1;;
-			--exclude=*) EXOPT=$1;;
-			-*) OPTS="$OPTS $1";;
-			*) PKGNAME="$PKGNAME $1";;
+		-i | -r) ;;
+		-y) NOCONFIRM=1 ;;
+		-o)
+			DOWNLOAD_ONLY=1
+			OPTS="$OPTS $1"
+			;;
+		-d) NO_DEP=1 ;;
+		--exclude=*) EXOPT=$1 ;;
+		-*) OPTS="$OPTS $1" ;;
+		*) PKGNAME="$PKGNAME $1" ;;
 		esac
 		shift
-	done	
+	done
 	[ "$PKGNAME" ] || {
 		echo "Please specify package(s) to upgrade."
 		return 1
@@ -845,7 +868,7 @@ scratch_upgrade() {
 		upkg="$upkg $pkg"
 	done
 	[ "$upkg" ] || return 0
-	
+
 	UPGPKG=0
 	NEWPKG=0
 	installmsg="ACTION#PORTNAME#VERSION#OLDVERSION"
@@ -857,11 +880,11 @@ scratch_upgrade() {
 			if [ "$(echo $upkg | tr ' ' '\n' | grep -x $d)" = "$d" ]; then
 				installmsg="$installmsg upgrade#$d#$(get_version $d)-$(get_release $d)#$(get_iversion $d)-$(get_irelease $d)"
 				WILLINSTALL="$WILLINSTALL $d"
-				UPGPKG=$(( UPGPKG + 1 ))
+				UPGPKG=$((UPGPKG + 1))
 			elif ! scratch_isinstalled $d && [ "$(getportpath "$d")" ]; then
 				installmsg="$installmsg install#$d#$(get_version $d)-$(get_release $d)#$(get_iversion $d)-$(get_irelease $d)"
 				WILLINSTALL="$WILLINSTALL $d"
-				NEWPKG=$(( NEWPKG + 1 ))
+				NEWPKG=$((NEWPKG + 1))
 			fi
 		done
 	else
@@ -869,7 +892,7 @@ scratch_upgrade() {
 		for dd in $upkg; do
 			installmsg="$installmsg upgrade#$d#$(get_version $d)-$(get_release $d)#$(get_iversion $d)-$(get_irelease $d)"
 			WILLINSTALL="$WILLINSTALL $dd"
-			UPGPKG=$(( UPGPKG + 1 ))
+			UPGPKG=$((UPGPKG + 1))
 		done
 	fi
 	echo $installmsg | tr ' ' '\n' | tr '#' ' ' | column -t
@@ -884,14 +907,14 @@ scratch_upgrade() {
 	count=0
 	total=$(echo $WILLINSTALL | wc -w)
 	for inst in $WILLINSTALL; do # install all required dependencies and target packages itself
-		count=$(( count + 1 ))
+		count=$((count + 1))
 		cd $(getportpath $inst)
 		if ! scratch_isinstalled $inst; then
 			settermtitle "[ $count/$total ] Installing $inst..."
 			run_preinstallsh
 			pkgbuild -i $OPTS || {
 				error=1
-				count=$(( count - 1 ))
+				count=$((count - 1))
 				break
 			}
 			run_postinstallsh
@@ -900,7 +923,7 @@ scratch_upgrade() {
 			run_preinstallsh
 			pkgbuild -u $OPTS || {
 				error=1
-				count=$(( count - 1 ))
+				count=$((count - 1))
 				break
 			}
 			run_postinstallsh
@@ -944,10 +967,10 @@ check_outdated() {
 		iversion=$(get_iversion $pkg)
 		irelease=$(get_irelease $pkg)
 		[ $version$release = $iversion$irelease ] && continue
-		if [ "$version" !=  "$iversion" ]; then
+		if [ "$version" != "$iversion" ]; then
 			vercomp $version $iversion
 			[ $? = 1 ] && NEWINSTALLED="1"
-		elif [ "$release" !=  "$irelease" ]; then
+		elif [ "$release" != "$irelease" ]; then
 			vercomp $release $irelease
 			[ $? = 1 ] && NEWINSTALLED="1"
 		fi
@@ -960,11 +983,16 @@ scratch_outdate() {
 	for i in $(check_outdated); do
 		OUTDATE=1
 		unset ii
-		pname=${i%%#*}; i=${i#*#}
-		oldver=${i%%#*}; i=${i#*#}
-		newver=${i%%#*}; i=${i#*#}
-		newins=${i%%#*}; i=${i#*#}
-		masked=${i%%#*}; i=${i#*#}
+		pname=${i%%#*}
+		i=${i#*#}
+		oldver=${i%%#*}
+		i=${i#*#}
+		newver=${i%%#*}
+		i=${i#*#}
+		newins=${i%%#*}
+		i=${i#*#}
+		masked=${i%%#*}
+		i=${i#*#}
 		[ "$newins" = 1 ] && ii=" [newer installed]"
 		[ "$masked" = 1 ] && ii="$ii [masked]"
 		echo "$pname $oldver => $newver$ii"
@@ -1024,13 +1052,13 @@ scratch_cache() {
 
 	if [ "$(find $PACKAGE_DIR -mindepth 1 -print -quit 2>/dev/null)" ]; then
 		for list in "$PACKAGE_DIR"/*; do
-			basename $list >> "$allcachepkg"
+			basename $list >>"$allcachepkg"
 		done
 	fi
 
 	if [ "$(find $SOURCE_DIR -mindepth 1 -print -quit 2>/dev/null)" ]; then
 		for list in "$SOURCE_DIR"/*; do
-			basename $list >> "$allcachesrc"
+			basename $list >>"$allcachesrc"
 		done
 	fi
 
@@ -1038,25 +1066,25 @@ scratch_cache() {
 		if [ "$(find $repo/*/ -mindepth 1 -print -quit 2>/dev/null)" ]; then # check directory if its not empty
 			for port in $repo/*/$BUILD_SCRIPT; do
 				. $port
-				echo "$name-$version-$release.spkg.tar.$COMPRESSION_MODE" >> "$keepcachepkg"
+				echo "$name-$version-$release.spkg.tar.$COMPRESSION_MODE" >>"$keepcachepkg"
 				if [ "$source" ]; then
 					for src in $source; do
-#						printf "%-200s\r" "Processing $src"
+						#						printf "%-200s\r" "Processing $src"
 						if echo $src | grep -Eq "(ftp|http|https)://"; then
 							if echo $src | grep -Eq "::(ftp|http|https)://"; then
 								sourcename="$(echo $src | awk -F '::' '{print $1}')"
 							else
 								sourcename="$(echo $src | rev | cut -d / -f 1 | rev)"
 							fi
-							echo $sourcename >> "$keepcachesrc"
+							echo $sourcename >>"$keepcachesrc"
 						fi
 					done
 				fi
 			done
 		fi
 	done
-	grep -Fxv -f "$keepcachepkg" "$allcachepkg" > "$diffcachepkg"
-	grep -Fxv -f "$keepcachesrc" "$allcachesrc" > "$diffcachesrc"
+	grep -Fxv -f "$keepcachepkg" "$allcachepkg" >"$diffcachepkg"
+	grep -Fxv -f "$keepcachesrc" "$allcachesrc" >"$diffcachesrc"
 
 	cat $diffcachepkg
 	cat $diffcachesrc
@@ -1107,10 +1135,10 @@ scratch_deplist() {
 	IFS=,
 	while [ "$1" ]; do
 		case $1 in
-			-q) quick=1;;
-			--exclude=*) for i in ${1#*=}; do exclude="$exclude $i"; done;;
-			-*) ;;
-			*) PKG="$PKG $1";;
+		-q) quick=1 ;;
+		--exclude=*) for i in ${1#*=}; do exclude="$exclude $i"; done ;;
+		-*) ;;
+		*) PKG="$PKG $1" ;;
 		esac
 		shift
 	done
@@ -1126,13 +1154,13 @@ scratch_deplist() {
 			[ "$quick" = 1 ] || msg_portnotfound $p
 		fi
 	done
-	
+
 	for p in $PPKG; do
 		deplist $p
 	done
-	
+
 	[ "$DEP" ] || return 0
-	
+
 	if [ "$quick" = 1 ]; then
 		echo $DEP | tr ' ' '\n'
 	else
@@ -1150,7 +1178,7 @@ deplist() {
 	if echo $exclude | tr " " "\n" | grep -qx $1; then
 		return 0
 	fi
-	
+
 	# check currently process for circular dependencies
 	# for circular dependencies, found first will take precedence
 	[ "$CHECK" ] && {
@@ -1158,10 +1186,10 @@ deplist() {
 			return 0
 		fi
 	}
-	
+
 	# add package to currently process
 	CHECK="$CHECK $1"
-	
+
 	# check dependencies
 	for deplist in $(get_depends $1); do
 		if [ "$quick" = 1 ] && scratch_isinstalled $deplist; then
@@ -1176,7 +1204,7 @@ deplist() {
 			fi
 		fi
 	done
-	
+
 	# add dependency to list checked dep
 	if ! echo $DEP | tr " " "\n" | grep -qx $1; then
 		if [ "$quick" = 1 ]; then
@@ -1185,12 +1213,12 @@ deplist() {
 			DEP="$DEP $1"
 		fi
 	fi
-	
+
 	# delete item from loop process
 	CHECK=$(echo $CHECK | sed "s/$1//")
 }
 
-scratch_cat() {	
+scratch_cat() {
 	needarg $@
 	if PPATH=$(getportpath "$1"); then
 		cat "$PPATH/$BUILD_SCRIPT"
@@ -1203,13 +1231,13 @@ scratch_cat() {
 scratch_dependent() {
 	needarg $@
 	if [ "$(getportpath $1)" ]; then
-		for dpd in $(grep -R "# depends[[:blank:]]*:" $PORT_REPO \
-			| sed "s,:# depends[[:blank:]]*:[[:blank:]]*,#|,;s, ,|,g;s,$,|,g" \
-			| grep "|$1|" \
-			| awk -F "#" '{print $1}' \
-			| rev \
-			| awk -F / '{print $2}' \
-			| rev); do
+		for dpd in $(grep -R "# depends[[:blank:]]*:" $PORT_REPO |
+			sed "s,:# depends[[:blank:]]*:[[:blank:]]*,#|,;s, ,|,g;s,$,|,g" |
+			grep "|$1|" |
+			awk -F "#" '{print $1}' |
+			rev |
+			awk -F / '{print $2}' |
+			rev); do
 			msg_depsstatus $dpd
 		done
 	else
@@ -1219,7 +1247,7 @@ scratch_dependent() {
 }
 
 scratch_depends() {
-	needarg $@	
+	needarg $@
 	if getportpath "$1" >/dev/null; then
 		depends=$(get_depends $1)
 	else
@@ -1229,10 +1257,10 @@ scratch_depends() {
 	msg_depsstatus $depends
 }
 
-scratch_dup() {	
-	dup=$(find $PORT_REPO -type d -print | grep -Exv "($(echo $PORT_REPO | tr ' ' '|'))" | \
+scratch_dup() {
+	dup=$(find $PORT_REPO -type d -print | grep -Exv "($(echo $PORT_REPO | tr ' ' '|'))" |
 		rev | cut -d '/' -f1 | rev | sort | uniq -d)
-	
+
 	if [ "$dup" ]; then
 		for dp in $dup; do
 			for repo in $PORT_REPO; do
@@ -1241,7 +1269,7 @@ scratch_dup() {
 		done
 	else
 		msg "No duplicate ports found."
-	fi	
+	fi
 }
 
 scratch_foreign() {
@@ -1252,7 +1280,7 @@ scratch_foreign() {
 			echo "$pkg $iversion-$irelease"
 		fi
 		unset pkg iversion irelease
-	done	
+	done
 }
 
 scratch_info() {
@@ -1261,13 +1289,13 @@ scratch_info() {
 		msg_portnotfound $1
 		return 1
 	}
-	
+
 	. $ppath/$BUILD_SCRIPT
 	desc=$(grep "^# description[[:blank:]]*:" $ppath/$BUILD_SCRIPT | sed 's/^# description[[:blank:]]*:[[:blank:]]*//')
 	maint=$(grep "^# maintainer[[:blank:]]*:" $ppath/$BUILD_SCRIPT | sed 's/^# maintainer[[:blank:]]*:[[:blank:]]*//')
 	homep=$(grep "^# homep[[:blank:]]*:" $ppath/$BUILD_SCRIPT | sed 's/^# homepage[[:blank:]]*:[[:blank:]]*//')
 	deps=$(get_depends $1 | tr '\n' ' ')
-	
+
 	echo "Name:         $1"
 	echo "Path:         $ppath"
 	echo "Version:      $version"
@@ -1310,8 +1338,8 @@ scratch_purge() {
 	needroot "Purging package"
 	while [ "$1" ]; do
 		case $1 in
-			-*) PURGEOPTS="$PURGEOPTS $1";;
-			*) PURGENAME="$PURGENAME $1";;
+		-*) PURGEOPTS="$PURGEOPTS $1" ;;
+		*) PURGENAME="$PURGENAME $1" ;;
 		esac
 		shift
 	done
@@ -1358,8 +1386,8 @@ scratch_orphan() {
 		echo $DEP | tr ' ' '\n' | grep -qx $i && continue
 		deplist $i
 	done
-	echo $DEP | tr ' ' '\n' > $tmpdeplistworld
-	allinstalled > $tmpallinstalled
+	echo $DEP | tr ' ' '\n' >$tmpdeplistworld
+	allinstalled >$tmpallinstalled
 	grep -xvF -f $tmpdeplistworld $tmpallinstalled
 	rm $tmpallinstalled $tmpdeplistworld
 }
@@ -1377,13 +1405,13 @@ scratch_path() {
 scratch_provide() {
 	needarg $@
 	arg=$(echo $1 | sed "s/^\///")
-	grep -R "$arg" $PKGDB_DIR/* \
-	| sed "s:$PKGDB_DIR/::" \
-	| tr : "\t"
+	grep -R "$arg" $PKGDB_DIR/* |
+		sed "s:$PKGDB_DIR/::" |
+		tr : "\t"
 }
 
 scratch_readme() {
-	needarg $@	
+	needarg $@
 	if PPATH=$(getportpath "$1"); then
 		if [ -f "$PPATH/readme" ]; then
 			cat "$PPATH/readme"
@@ -1419,29 +1447,29 @@ scratch_printconfig() {
 	done
 }
 
-scratch_files() {	
+scratch_files() {
 	needarg $@
 	if scratch_isinstalled $1; then
 		cat "$PKGDB_DIR/$1"
 	else
 		msg_portnotinstalled $1
-	fi	
+	fi
 }
 
 world_add() {
-	[[ ! -e "$WORLD_FILE" ]] && >| "$WORLD_FILE"
+	[[ ! -e "$WORLD_FILE" ]] && >|"$WORLD_FILE"
 	grep -qx $1 "$WORLD_FILE" && return
 	scratch_isinstalled $1 || {
 		msg_portnotinstalled $1
 		return 1
 	}
-	echo "$1" >> "$WORLD_FILE"
+	echo "$1" >>"$WORLD_FILE"
 	sort "$WORLD_FILE" -o "$WORLD_FILE" # sort world
-	sed '/^$/d' -i "$WORLD_FILE" # delete empty lines
+	sed '/^$/d' -i "$WORLD_FILE"        # delete empty lines
 }
 
 world_del() {
-	[[ ! -e "$WORLD_FILE" ]] && >| "$WORLD_FILE"
+	[[ ! -e "$WORLD_FILE" ]] && >|"$WORLD_FILE"
 	grep -qx $1 "$WORLD_FILE" || return
 	sed "/^$1$/d" -i "$WORLD_FILE"
 	sed '/^$/d' -i "$WORLD_FILE" # delete empty lines
@@ -1452,7 +1480,7 @@ scratch_world() {
 		needroot
 		touch "$WORLD_FILE"
 		while [ "$1" ]; do
-			if [ ! $(grep -x $1 "$WORLD_FILE") ] ; then
+			if [ ! $(grep -x $1 "$WORLD_FILE") ]; then
 				echo "world: '$1' added to world"
 				world_add $1
 			else
@@ -1471,7 +1499,7 @@ scratch_world() {
 }
 
 scratch_help() {
-	cat << EOF
+	cat <<EOF
 Usage:
     $(basename $0) <options> [<arg>]
     
@@ -1565,21 +1593,24 @@ shift
 
 for opt in $@; do
 	case $opt in
-	     --nocolor) nocolor;;
-   --append-repo=*) APPENDREPO="$APPENDREPO ${opt#*=}";;
-  --prepend-repo=*) PREPENDREPO="$PREPENDREPO ${opt#*=}";;
- --override-repo=*) OVERRIDEREPO="$OVERRIDEREPO ${opt#*=}";;
-	      --repo=*) PORT_REPO="$PORT_REPO ${opt#*=}";;
-	 --repo-file=*) REPO_FILE="${opt#*=}";;
-	--alias-file=*) ALIAS_FILE="${opt#*=}";;
-   --config-file=*) CONFIG_FILE="${opt#*=}";;
-	           --*) MAINOPTS="$MAINOPTS $opt";;
-	            -*) char=${#opt}; count=1
-	                while [ "$count" != "$char" ]; do
-	                   count=$((count+1))
-	                   MAINOPTS="$MAINOPTS -$(printf '%s' $opt | cut -c $count)"
-	                done;;
-	             *) MAINOPTS="$MAINOPTS $opt";;
+	--nocolor) nocolor ;;
+	--append-repo=*) APPENDREPO="$APPENDREPO ${opt#*=}" ;;
+	--prepend-repo=*) PREPENDREPO="$PREPENDREPO ${opt#*=}" ;;
+	--override-repo=*) OVERRIDEREPO="$OVERRIDEREPO ${opt#*=}" ;;
+	--repo=*) PORT_REPO="$PORT_REPO ${opt#*=}" ;;
+	--repo-file=*) REPO_FILE="${opt#*=}" ;;
+	--alias-file=*) ALIAS_FILE="${opt#*=}" ;;
+	--config-file=*) CONFIG_FILE="${opt#*=}" ;;
+	--*) MAINOPTS="$MAINOPTS $opt" ;;
+	-*)
+		char=${#opt}
+		count=1
+		while [ "$count" != "$char" ]; do
+			count=$((count + 1))
+			MAINOPTS="$MAINOPTS -$(printf '%s' $opt | cut -c $count)"
+		done
+		;;
+	*) MAINOPTS="$MAINOPTS $opt" ;;
 	esac
 	shift
 done

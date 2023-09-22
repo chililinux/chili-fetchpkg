@@ -4,13 +4,11 @@
 #
 
 printhelp() {
-	cat << EOF
+	cat <<EOF
 
 Usage:
   $(basename $0) <chroot-dir> [command]
-  
 If 'command' is unspecified, ${0##*/} will launch /bin/sh.
-  
 EOF
 }
 
@@ -24,7 +22,7 @@ unmount() {
 		umount $1 2>/dev/null
 	done
 }
-	
+
 [ "$(id -u)" = "0" ] || {
 	msgerr "$(basename $0) need root access!"
 	printhelp
@@ -67,7 +65,7 @@ fi
 mount -t tmpfs tmpfs $TARGET/run
 
 if [ -h $TARGET/dev/shm ]; then
-  mkdir -p $TARGET/$(readlink $TARGET/dev/shm)
+	mkdir -p $TARGET/$(readlink $TARGET/dev/shm)
 fi
 
 [ -f $TARGET/etc/resolv.conf ] && {
@@ -77,10 +75,10 @@ fi
 cp -L /etc/resolv.conf $TARGET/etc
 
 chroot "$TARGET" /usr/bin/env -i \
-HOME=/root \
-TERM="$TERM" \
-PS1='\u:\w\$ ' \
-PATH=/bin:/usr/bin:/sbin:/usr/sbin $CMD
+	HOME=/root \
+	TERM="$TERM" \
+	PS1='\u:\w\$ ' \
+	PATH=/bin:/usr/bin:/sbin:/usr/sbin $CMD
 
 retval=$?
 

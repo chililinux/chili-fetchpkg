@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #shellcheck disable=SC2317,SC2188,SC2034,SC2155,SC2059
 #shellcheck source=/dev/null
 #
@@ -158,7 +158,6 @@ mkfetch() {
 	[[ -z "$fetch_pkgname" ]] && fetch_pkgname=$pkgname # from PKGBUILD
 	[[ -z "$pkgver" ]] && pkgver=$pkgver                # from PKGBUILD
 	[[ -z "$pkgrel" ]] && pkgrel=$pkgrel                # from PKGBUILD
-	[[ -z "$public_arch" ]] && public_arch=x86_64
 
 	source "$ppath/$BUILD_SCRIPT"
 	[[ -z "$public_deps" ]] && {
@@ -175,6 +174,8 @@ mkfetch() {
 	public_source=${source[*]}
 	public_validpgpkeys=${validpgpkeys[*]}
 	public_sha256sums=${sha256sums[*]}
+
+	[[ -z "$public_arch" || "$public_arch" != 'any' || "$public_arch" != 'x86_64' ]] && public_arch=x86_64
 
 	LC_ALL=POSIX
 	BASE=$(basename $WORKDIR/$fetch_pkgname-$pkgver)

@@ -327,23 +327,29 @@ pkg_build() {
 			build
 		)
 		retval="$?"
-		[ "$(command -v check)" ] && (
-			set -e
-			check
-		)
+#		[ "$(command -v check)" ] && (
+#			set -e
+#			check
+#		)
 
 		if [[ -n "$pkgbase" ]]; then
 			for pkgs in ${pkgname[*]}; do
 				name=$pkgs
 				PKGNAME="$name-$version-$release.spkg.tar.$COMPRESSION_MODE"
 				[ "$(command -v package_${pkgs})" ] && {
-					set -e
+#					set -e
 					package_${pkgs}
 					pkg_package
 					log_msg "$(gettext "Construindo"): mkfetch"
 					mkfetch $pkgs
-					log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
-					log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
+					retval="$?"
+					if [ $retval != 0 ]; then
+						abort 1 "${red}Build failed: $name-$version-$release${reset}"
+					else
+						log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
+						log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
+						log_msg 0 "${green}Build success: $name-$version-$release${reset}"
+					fi
 				}
 			done
 		else
@@ -361,11 +367,11 @@ pkg_build() {
 			pkg_package
 			log_msg "$(gettext "Construindo"): mkfetch"
 			mkfetch
-			log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
-			log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
 			if [ $retval != 0 ]; then
 				abort 1 "${red}Build failed: $name-$version-$release${reset}"
 			else
+				log_msg "${green}Packaging success: ${yellow}$PACKAGE_DIR/$PKGNAME ($(ls -lh $PACKAGE_DIR/$PKGNAME | awk '{print $5}'))${reset}"
+				log_msg "${green}Packaging success: ${yellow}$FETCH_PKG.$PKG_EXT ($(ls -lh $FETCH_PKG.$PKG_EXT | awk '{print $5}'))${reset}"
 				log_msg 0 "${green}Build success: $name-$version-$release${reset}"
 			fi
 		fi
