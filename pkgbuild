@@ -203,7 +203,7 @@ pkg_unpack() {
 			fi
 		done
 		case $i in
-		*.tar | *.tar.gz | *.tar.Z | *.tgz | *.tar.bz2 | *.tar.lz | *.tbz2 | *.tar.xz | *.txz | *.tar.lzma | *.zip | *.rpm| *.tar.lz)
+		*.tar | *.tar.gz | *.tar.Z | *.tgz | *.tar.bz2 | *.tar.lz | *.tbz2 | *.tar.xz | *.txz | *.tar.lzma | *.zip | *.rpm| *.tar.lz|*.deb)
 			$TAR -p -o -C $SRC -xf $i
 			log_msg "Unpacking: $i"
 			;;

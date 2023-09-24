@@ -24,12 +24,12 @@
 . lib.sh
 
 declare -gA git_hosts=(
-	#	[manjaro]='https://gitlab.manjaro.org/applications'
-	#	[manjaro_community]='https://gitlab.manjaro.org/packages/community'
-	#	[manjaro_extra]='https://gitlab.manjaro.org/packages/extra'
-	#	[manjaro_kde_unstable]='https://gitlab.manjaro.org/packages/kde-unstable'
-	#	[manjaro_multilib]='https://gitlab.manjaro.org/packages/multilib'
-	#	[manjaro_core]='https://gitlab.manjaro.org/packages/core'
+#	[manjaro]='https://gitlab.manjaro.org/applications'
+#	[manjaro_community]='https://gitlab.manjaro.org/packages/community'
+#	[manjaro_extra]='https://gitlab.manjaro.org/packages/extra'
+#	[manjaro_kde_unstable]='https://gitlab.manjaro.org/packages/kde-unstable'
+#	[manjaro_multilib]='https://gitlab.manjaro.org/packages/multilib'
+	[manjaro_core]='https://gitlab.manjaro.org/packages/core'
 	[aur]="https://aur.archlinux.org"
 	[biglinux]="https://github.com/biglinux"
 	[gitlab]="https://gitlab.archlinux.org/archlinux/packaging/packages"
@@ -567,15 +567,15 @@ comment
 }
 
 # Função para limpar o nome das dependências
-clean_dependency_name() {
+function clean_dependency_name() {
 	local dep_name="$1"
 	dep_name="${dep_name%%[<>=]*}" # Remove informações de versão
 	dep_name="${dep_name%%.so}"    # Remove extensão .so
-	[[ "$dep_name" = "sh" ]] && dep_name='bash'
+	[[ "$dep_name" = "sh"    ]] && dep_name='bash'
 	echo "$dep_name"
 }
 
-function fetch_gitlab_deplist {
+function fetch_gitlab_deplist() {
 	local ipkgs=("$1")
 	local path_pkgfullname="$SOURCE_DIR/$pkgname"
 	local ncount=0
@@ -592,7 +592,7 @@ function fetch_gitlab_deplist {
 				# Use o comando `source` para carregar as variáveis do PKGBUILD
 				source "$pkgbuild_path"
 
-				for dependency in "${makedepends[@]}"; do
+				for dependency in "${depends[@]}"; do
 					clean_dep_name="$(clean_dependency_name "$dependency")"
 
 					# Verifique se a dependência já existe no array ipkgs
@@ -618,7 +618,7 @@ function fetch_gitlab_deplist {
 
 scratch_build() {
 	#debug "$@"
-	export PKGNAME
+	export PKGNAME=()
 	export pkg
 
 	while [ "$1" ]; do
@@ -634,7 +634,8 @@ scratch_build() {
 			sh_add_git_source "${1#*=}"
 			;;
 		-*) OPTS="$OPTS $1" ;;
-		*) PKGNAME="$PKGNAME $1" ;;
+#		*) PKGNAME="$PKGNAME $1" ;;
+		*) PKGNAME+=($1);;
 		esac
 		shift
 	done
@@ -661,7 +662,8 @@ scratch_build() {
 				#					log_msg 1 "Error ao clonar $i"
 				#					return 1
 				#				fi
-				IPKG="$IPKG $i"
+#				IPKG="$IPKG $i"
+				IPKG+=($i)
 			else
 				if [ ! "$(getportpath "$i")" ]; then
 					msg_portnotfound "$i"
@@ -678,16 +680,16 @@ scratch_build() {
 		}
 		log_msg "$(gettext "Resolvendo dependências...")"
 		if ((GITLAB)); then
-			INST=("$PKGNAME ")
+			INST=("${IPKG[*]}")
 			gitlab_deps=()
-			fetch_gitlab_deplist $IPKG
-			INST+=(${gitlab_deps[*]})
+			fetch_gitlab_deplist ${IPKG[*]}
+			INST+=("${gitlab_deps[*]}")
 		else
 			INST="$(scratch_deplist -q "$IPKG $EXOPT")"
 		fi
 	fi
 
-	#debug ${INST[*]}
+#debug ${INST[*]}
 
 	if [ "$INST" ]; then
 		for pkg in ${INST[*]}; do
@@ -713,67 +715,6 @@ scratch_build() {
 		done
 	fi
 }
-
-: <<'comment'
-scratch_build() {
-	while [ "$1" ]; do
-		case "$1" in
-		-i | -u | -r | -g | -p) ;;
-		--log) LOG=1 ;;
-		--nodeps) NODEPS=1 ;;
-		-*) OPTS="$OPTS $1" ;;
-		*) export PKGNAME="$PKGNAME $1" ;;
-		esac
-		shift
-	done
-	[ "$PKGNAME" ] || {
-		log_msg 1 "Please specify package(s) to build."
-		return 1
-	}
-	export pkg
-
-	if (( NODEPS )); then
-		INST=$PKGNAME
-	else
-		for i in $PKGNAME; do
-			if [ ! "$(getportpath "$i")" ]; then
-				msg_portnotfound "$i"
-			elif scratch_isinstalled "$i"; then
-				msg_portalreadyinstalled "$i"
-			else
-				IPKG="$IPKG $i"
-			fi
-		done
-		[ "$IPKG" ] || return 0
-		log_msg "$(gettext "Resolvendo dependências...")"
-		INST="$(scratch_deplist -q "$IPKG $EXOPT")"
-	fi
-
-	if [ "$INST" ]; then
-		for pkg in ${INST}; do
-			ppath=$(getportpath "$pkg") || {
-				msg_portnotfound "$pkg"
-				return 1
-			}
-			cd "$ppath" || return 1
-			settermtitle "$(gettext "Construindo") $pkg..."
-			if (( LOG )); then
-				pkgbuild $OPTS | tee /var/log/pkgbuild.log || {
-					settermtitle "$(gettext "Construindo") $pkg falhou."
-					return 1
-				}
-			else
-				pkgbuild $OPTS || {
-					settermtitle "$(gettext "Construindo") $pkg falhou."
-					return 1
-				}
-			fi
-			settermtitle "$(gettext "Construindo") $pkg feito."
-			cd - >/dev/null || return 1
-		done
-	fi
-}
-comment
 
 scratch_install() {
 	needroot "Installing package"
@@ -1965,7 +1906,7 @@ done
 
 . "$CONFIG_FILE"
 export BUILD_SCRIPT="${BUILD_SCRIPT:-'spkgbuild'}"
-
+mkdir -p $SOURCE_DIR $PACKAGE_DIR $WORK_DIR
 if [ "$(command -v scratch_$mode)" ]; then
 	scratch_$mode $MAINOPTS
 else
