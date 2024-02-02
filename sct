@@ -1813,6 +1813,8 @@ EOF
 
 print_runhelp_msg() {
 	echo "Run ${cyan}'$APP help'${reset} to see available options."
+	echo "     ${cyan}sct build nano --nodeps"
+	echo "     ${cyan}sct build --git package --nodeps"
 	exit 2
 }
 

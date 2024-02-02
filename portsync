@@ -22,7 +22,8 @@
 #
 
 APP="${0##*/}"
-repo_file=/etc/scratchpkg.repo
+#repo_file=/etc/scratchpkg.repo
+repo_file=/etc/fetchpkg.repo
 [ -e "lib.sh" ] && . "lib.sh"
 
 cmp_copy() {
