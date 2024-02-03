@@ -1886,7 +1886,7 @@ if [ -f "$REPO_FILE" ]; then
 		# Verifique se a linha não é em branco e não é um comentário (não começa com #)
 		if [[ -n "$repodir" && ! "$repodir" =~ ^\s*#.* ]]; then
 			# Remova espaços em branco da linha e armazene em repodir
-			repodir=$(echo "$repodir" | tr -d '[:space:]')
+#			repodir=$(echo "$repodir" | tr -d '[:space:]')
 			# Adicione repodir à variável de ambiente PORT_REP
 			export PORT_REPO="$PORT_REPO $repodir"
 		fi
