@@ -1,8 +1,5 @@
 name: Criar release e arquivo .tar.gz
 
-env:
-  PACKAGE_NAME: chili-fetchpack.tar.gz
-
 # Gatilhos para o workflow
 on:
   push:
@@ -37,22 +34,34 @@ jobs:
         id: time
         run: echo "::set-output name=time::$(date +'%Y.%m.%d-%H%M')"
 
+  # Job para definir o nome do repositório
+  set-repo-name:
+    runs-on: ubuntu-latest
+    outputs:
+      REPOSITORY_NAME: ${{ steps.get-repo-name.outputs.repo_name }}
+    steps:
+      - name: Obter nome do repositório
+        id: get-repo-name
+        run: echo "::set-output name=repo_name::$(basename $GITHUB_REPOSITORY)"
+
   # Job para preparar a release
   prepare-release:
     runs-on: ubuntu-20.04  # Define a máquina virtual a ser usada
-    needs: [get-time]  # Depende do job get-time para obter a hora atual
+    needs: [get-time, set-repo-name]  # Depende do job get-time para obter a hora atual e do job set-repo-name para obter o nome do repositório
+    env:
+      REPO_NAME: ${{ needs.set-repo-name.outputs.REPOSITORY_NAME }}
     steps:
       - name: Checkout do código
         uses: actions/checkout@v2
 
       - name: Criar arquivo .tar.gz
-        run: tar -cf $PACKAGE_NAME .
+        run: tar -cf ${{ env.REPO_NAME }}.tar.gz .
 
       - name: Salvar arquivo .tar.gz como artefato
         uses: actions/upload-artifact@v2
         with:
           name: arquivos
-          path: $PACKAGE_NAME
+          path: ${{ env.REPO_NAME }}.tar.gz
 
       - name: Criar release
         id: create_release
@@ -74,6 +83,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ORGANIZATION_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./${{ env.PACKAGE_NAME }}  # Correção aqui
-          asset_name: ${{ env.PACKAGE_NAME }}
+          asset_path: ./${{ env.REPO_NAME }}.tar.gz
+          asset_name: ${{ env.REPO_NAME }}.tar.gz
           asset_content_type: application/gzip
