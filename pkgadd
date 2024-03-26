@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # shellcheck shell=sh disable=SC2034
 #
 #  scratchpkg
